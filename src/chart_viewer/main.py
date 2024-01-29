@@ -51,6 +51,15 @@ class ChartWidget(QWidget):
         super().__init__()
         self.layout = QVBoxLayout(self)
         self.chart = QtChart(self)
+        self.chart.candle_style(
+            # up_color="rgba(200, 0, 0, 100)",
+            # down_color="rgba(0, 200, 0, 100)",
+            up_color="rgba(200, 97, 100, 100)",
+            down_color="rgba(39, 157, 130, 100)",
+        )
+        self.chart.volume_config(
+            up_color="rgba(200,127,130,0.8)", down_color="rgba(83,141,131,0.8)"
+        )
         self.chart.legend(visible=True)
         # self.chart.topbar.textbox("symbol", "File")
         self.chart.topbar.switcher(
