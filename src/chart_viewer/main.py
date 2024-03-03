@@ -4,8 +4,9 @@ import polars as pl
 
 # from lightweight_charts import Chart
 # from PySide6 import QtCore, QtWidgets, QtGui
-from PySide6 import QtCore
-from PySide6.QtWidgets import (
+# from PySide6 import QtCore
+from PyQt5 import QtCore
+from PyQt5.QtWidgets import (
     QApplication,
     QPushButton,
     QLabel,
@@ -38,7 +39,8 @@ class FileSelector(QWidget):
 
         self.button.clicked.connect(self.select_file)
 
-    @QtCore.Slot()
+    # @QtCore.Slot()
+    @QtCore.pyqtSlot()
     def select_file(self):
         if self.dialog.exec():
             file = self.dialog.selectedFiles()[0]
@@ -84,7 +86,8 @@ class ChartWidget(QWidget):
         self.layout.setContentsMargins(0, 0, 0, 0)
         self.df = pl.DataFrame()
 
-    @QtCore.Slot()
+    # @QtCore.Slot()
+    @QtCore.pyqtSlot()
     def load_file(self):
         if self.file_selector.selectedFile:
             if self.file_selector.selectedFile.endswith(".csv"):
@@ -125,22 +128,20 @@ class ChartWidget(QWidget):
         )
 
         if "LongShort" in df.columns:
-            df_long = df.filter(
-                pl.col("LongShort") == 1,
-            ).select(pl.col("date"))
-            for d in df_long["date"]:
-                self.chart.marker(d, color="rgba(255, 0, 0, 0.7)", text="long")
-            df_short = df.filter(
-                pl.col("LongShort") == -1,
-            ).select(pl.col("date"))
-            for d in df_short["date"]:
-                self.chart.marker(
-                    d,
-                    position="above",
-                    shape="arrow_down",
-                    color="rgba(0, 255, 0, 0.7)",
-                    text="short",
-                )
+            df_marker = df.filter(pl.col("LongShort").is_not_null())
+            for d, pos in zip(df_marker["date"], df_marker["LongShort"]):
+                if pos > 0:
+                    self.chart.marker(
+                        d, color="rgba(255, 0, 0, 0.7)", text=f"long: {pos}"
+                    )
+                else:
+                    self.chart.marker(
+                        d,
+                        position="above",
+                        shape="arrow_down",
+                        color="rgba(0, 255, 0, 0.7)",
+                        text=f"short: {pos}",
+                    )
 
     def update_data(self, df: pl.DataFrame):
         self.chart.update(df.to_pandas())
@@ -151,7 +152,8 @@ class ChartWidget(QWidget):
             self.set_data(self.df)
         else:
             df = self.df.filter(
-                pl.col("date").dt.year() == int(chart.topbar["timeframe"].value)#datetime.date()
+                pl.col("date").dt.year()
+                == int(chart.topbar["timeframe"].value)  # datetime.date()
             )
             self.set_data(df)
         # new_data = get_bar_data(chart.topbar["symbol"].value, chart.topbar["timeframe"].value)
