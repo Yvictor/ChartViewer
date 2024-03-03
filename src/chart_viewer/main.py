@@ -100,6 +100,7 @@ class ChartWidget(QWidget):
             self.set_data(self.df)
 
     def set_data(self, df: pl.DataFrame):
+        self.chart.clear_markers()
         df = df.with_columns(pl.col("date").cast(str))
         self.chart.set(df.to_pandas(), render_drawings=True)
 
