@@ -3,10 +3,11 @@ import pandas as pd
 import polars as pl
 
 # from lightweight_charts import Chart
-# from PySide6 import QtCore, QtWidgets, QtGui
+from PySide6 import QtCore, QtWidgets, QtGui
+
 # from PySide6 import QtCore
-from PyQt5 import QtCore
-from PyQt5.QtWidgets import (
+# from PyQt5 import QtCore
+from PySide6.QtWidgets import (
     QApplication,
     QPushButton,
     QLabel,
@@ -15,37 +16,168 @@ from PyQt5.QtWidgets import (
     QHBoxLayout,
     QVBoxLayout,
     QWidget,
+    QComboBox,
+    QLineEdit,
+    QDialog,
+    QInputDialog,
+    QFormLayout,
+    QDialogButtonBox,
 )
 from lightweight_charts.widgets import QtChart
 import qdarktheme
 
 
+class S3SettingDialog(QDialog):
+    def __init__(
+        self,
+        parent: QWidget | None = None,
+        f: QtCore.Qt.WindowType = QtCore.Qt.WindowType.Dialog,
+    ) -> None:
+        super().__init__(parent, f)
+        self.settings = dict(
+            access_key_id=QLineEdit(""),
+            secret_access_key=QLineEdit(""),
+            region=QLineEdit(""),
+            endpoint_url=QLineEdit(""),
+        )
+        self.layout = QFormLayout(self)  # QVBoxLayout()
+        for k, v in self.settings.items():
+            self.layout.addRow(f"{k}: ", v)
+
+        self.button_box = QDialogButtonBox(
+            QDialogButtonBox.Ok | QDialogButtonBox.Cancel, self
+        )
+        self.layout.addWidget(self.button_box)
+
+        self.button_box.accepted.connect(self.accept)
+        self.button_box.rejected.connect(self.reject)
+        self.read_settings()
+
+        self.button_box.accepted.connect(self.write_settings)
+
+    def get_settings(self):
+        return {k: v.text() for k, v in self.settings.items()}
+
+    def write_settings(self):
+        store_settings = QtCore.QSettings()  # fileName="ChartViewer")
+        store_settings.beginGroup("S3Setting")
+        for k, v in self.settings.items():
+            store_settings.setValue(k, v.text())
+        store_settings.endGroup()
+
+    def read_settings(self):
+        store_settings = QtCore.QSettings()
+        store_settings.beginGroup("S3Setting")
+        for k, v in self.settings.items():
+            v.setText(store_settings.value(k, ""))
+        store_settings.endGroup()
+
+
 class FileSelector(QWidget):
+    file_selected = QtCore.Signal()
+
     def __init__(self):
         super().__init__()
 
         self.button = QPushButton("Select File")
         # self.button.setS
         self.filename_label = QLabel("File Name: ")
-        self.text = QLabel("Please Select File")  # alignment=QtCore.Qt.AlignLeft)
+        # self.text = QLabel("Please Select File")  # alignment=QtCore.Qt.AlignLeft)
+        self.filename = QLineEdit("Please Select File")
+        self.filetype_box = QComboBox(self)
 
         self.layout = QHBoxLayout(self)
         self.layout.addWidget(self.button, 1)
         self.layout.addStretch()
-        self.layout.addWidget(self.filename_label, 1)
-        self.layout.addWidget(self.text, 4)
+        self.layout.addWidget(self.filetype_box, 1)
+        self.layout.addWidget(self.filename_label, 0.5)
+        self.layout.addWidget(self.filename, 4)
+        # self.layout.addWidget(self.line_edit, 2)
         self.dialog = QFileDialog()
         self.selectedFile = None
+        self.s3_setting = {}
+        self.filename.setReadOnly(True)
+        self.filetype_box.addItems(["local", "s3"])
 
-        self.button.clicked.connect(self.select_file)
+        self.button.clicked.connect(self.select_local_file)
+        self.filetype_box.activated.connect(self.select_filetype)
+        # self.filetype_box.activated.connect(self.write_settings)
+        self.filename.returnPressed.connect(self.set_selected_file)
+        # self.read_settings()
 
-    # @QtCore.Slot()
-    @QtCore.pyqtSlot()
-    def select_file(self):
+    @QtCore.Slot()
+    # @QtCore.pyqtSlot()
+    def set_selected_file(self, f=None):
+        if f:
+            self.filename.setText(f)
+        self.selectedFile = self.filename.text()
+        print("emit")
+        self.file_selected.emit()
+        self.write_settings()
+
+    @QtCore.Slot()
+    # @QtCore.pyqtSlot()
+    def select_local_file(self):
         if self.dialog.exec():
             file = self.dialog.selectedFiles()[0]
-            self.selectedFile = file
-            self.text.setText(file)
+            # self.filename.setText(file)
+            self.set_selected_file(file)
+
+    @QtCore.Slot()
+    # @QtCore.pyqtSlot()
+    def setting(self):
+        if self.dialog.exec():
+            self.s3_setting = self.dialog.get_settings()
+
+    def is_s3(self):
+        return self.filetype_box.currentText() == "s3"
+
+    def select_filetype(self):
+        print(f"|{self.filetype_box.currentText()}|")
+        if self.filetype_box.currentText() == "local":
+            if self.filename.text() == "":
+                self.filename.setText("Please Select File")
+            self.dialog = QFileDialog()
+            self.filename.setReadOnly(True)
+            self.button.setText("Select File")
+            self.button.clicked.disconnect(self.setting)
+            self.button.clicked.connect(self.select_local_file)
+            self.write_settings()
+            # self.read_settings()
+        else:
+            if self.filename.text() == "Please Select File":
+                # self.set_selected_file("")
+                self.filename.setText("")
+            self.dialog = S3SettingDialog()  # QInputDialog()
+            self.button.setText("Setting")
+            self.filename.setReadOnly(False)
+            self.s3_setting = self.dialog.get_settings()
+            self.button.clicked.disconnect(self.select_local_file)
+            self.button.clicked.connect(self.setting)
+            self.write_settings()
+            # self.read_settings()
+
+    def write_settings(self):
+        store_settings = QtCore.QSettings()  # fileName="ChartViewer")
+        store_settings.beginGroup("FileSelector")
+        if self.selectedFile:
+            store_settings.setValue("selectedFile", self.selectedFile)
+            store_settings.setValue("filetype", self.filetype_box.currentText())
+        print("write setting filetype: {}".format(store_settings.value("filetype", "")))
+        store_settings.endGroup()
+
+    def read_settings(self):
+        store_settings = QtCore.QSettings()
+        store_settings.beginGroup("FileSelector")
+        print("read setting filetype: {}".format(store_settings.value("filetype", "local")))
+        self.filetype_box.setCurrentText(store_settings.value("filetype", "local"))
+        self.select_filetype()
+        if not self.selectedFile:
+            self.selectedFile = store_settings.value("selectedFile", None)
+            # self.filename.setText(self.selectedFile)
+            if self.selectedFile:
+                self.set_selected_file(self.selectedFile)
+        store_settings.endGroup()
 
 
 class ChartWidget(QWidget):
@@ -80,20 +212,36 @@ class ChartWidget(QWidget):
             "BBandLower", color="rgba(20, 175, 20, 0.6)", width=1, price_line=False
         )
         self.file_selector = FileSelector()
-        self.file_selector.button.clicked.connect(self.load_file)
+        # self.file_selector.button.clicked.connect(self.load_file)
+        self.file_selector.file_selected.connect(self.load_file)
+        self.file_selector.read_settings()
+        
         self.layout.addWidget(self.file_selector, 1)
         self.layout.addWidget(self.chart.get_webview(), 50)
         self.layout.setContentsMargins(0, 0, 0, 0)
         self.df = pl.DataFrame()
+        # if self.file_selector.selectedFile:
+        #     self.load_file()
 
-    # @QtCore.Slot()
-    @QtCore.pyqtSlot()
+    @QtCore.Slot()
+    # @QtCore.pyqtSlot()
     def load_file(self):
         if self.file_selector.selectedFile:
             if self.file_selector.selectedFile.endswith(".csv"):
-                self.df = pl.read_csv(self.file_selector.selectedFile)
+                self.df = pl.read_csv(
+                    self.file_selector.selectedFile,
+                    storage_options=self.file_selector.s3_setting
+                    if self.file_selector.is_s3()
+                    else {},
+                )
             elif self.file_selector.selectedFile.endswith(".parquet"):
-                self.df = pl.read_parquet(self.file_selector.selectedFile)
+                print(self.file_selector.s3_setting)
+                self.df = pl.read_parquet(
+                    self.file_selector.selectedFile,
+                    storage_options=self.file_selector.s3_setting
+                    if self.file_selector.is_s3()
+                    else {},
+                )
             else:
                 raise ValueError("File type not supported")
             # df = pd.read_csv(self.file_selector.selectedFile)
