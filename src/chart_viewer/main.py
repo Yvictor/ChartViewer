@@ -169,7 +169,11 @@ class FileSelector(QWidget):
     def read_settings(self):
         store_settings = QtCore.QSettings()
         store_settings.beginGroup("FileSelector")
-        print("read setting filetype: {}".format(store_settings.value("filetype", "local")))
+        print(
+            "read setting filetype: {}".format(
+                store_settings.value("filetype", "local")
+            )
+        )
         self.filetype_box.setCurrentText(store_settings.value("filetype", "local"))
         self.select_filetype()
         if not self.selectedFile:
@@ -196,6 +200,9 @@ class ChartWidget(QWidget):
         )
         self.chart.legend(visible=True)
         # self.chart.topbar.textbox("symbol", "File")
+        self.chart.topbar.button(
+            "showtext", "Show Text: On", func=self.on_showtext_click
+        )
         self.chart.topbar.switcher(
             "timeframe",
             ("2020", "2021", "2022", "2023", "all"),
@@ -215,7 +222,7 @@ class ChartWidget(QWidget):
         # self.file_selector.button.clicked.connect(self.load_file)
         self.file_selector.file_selected.connect(self.load_file)
         self.file_selector.read_settings()
-        
+
         self.layout.addWidget(self.file_selector, 1)
         self.layout.addWidget(self.chart.get_webview(), 50)
         self.layout.setContentsMargins(0, 0, 0, 0)
@@ -223,9 +230,7 @@ class ChartWidget(QWidget):
         # if self.file_selector.selectedFile:
         #     self.load_file()
 
-    @QtCore.Slot()
-    # @QtCore.pyqtSlot()
-    def load_file(self):
+    def read_file(self):
         if self.file_selector.selectedFile:
             if self.file_selector.selectedFile.endswith(".csv"):
                 self.df = pl.read_csv(
@@ -244,11 +249,16 @@ class ChartWidget(QWidget):
                 )
             else:
                 raise ValueError("File type not supported")
-            # df = pd.read_csv(self.file_selector.selectedFile)
+        return self.df
+
+    @QtCore.Slot()
+    # @QtCore.pyqtSlot()
+    def load_file(self):
+        df = self.read_file()
+        if not df.is_empty():
             self.set_data(self.df)
 
     def set_data(self, df: pl.DataFrame):
-        self.chart.clear_markers()
         df = df.with_columns(pl.col("date").cast(str))
         self.chart.set(df.to_pandas(), render_drawings=True)
 
@@ -275,13 +285,21 @@ class ChartWidget(QWidget):
         self.line_lowerband.set(
             df_bands.select(pl.col("time"), pl.col("BBandLower")).to_pandas()
         )
+        self.plot_marker()
 
+    def plot_marker(self, show_text: bool = True):
+        self.chart.clear_markers()
+        if self.df.is_empty():
+            self.read_file()
+        df = self.df.with_columns(pl.col("date").cast(str))
         if "LongShort" in df.columns:
             df_marker = df.filter(pl.col("LongShort").is_not_null())
             for d, pos in zip(df_marker["date"], df_marker["LongShort"]):
                 if pos > 0:
                     self.chart.marker(
-                        d, color="rgba(255, 0, 0, 0.7)", text=f"long: {pos}"
+                        d,
+                        color="rgba(255, 0, 0, 0.7)",
+                        text=f"long: {pos}" if show_text else f"{pos}",
                     )
                 else:
                     self.chart.marker(
@@ -289,11 +307,23 @@ class ChartWidget(QWidget):
                         position="above",
                         shape="arrow_down",
                         color="rgba(0, 255, 0, 0.7)",
-                        text=f"short: {pos}",
+                        text=f"short: {pos}" if show_text else f"{pos}",
                     )
 
     def update_data(self, df: pl.DataFrame):
         self.chart.update(df.to_pandas())
+
+    def on_showtext_click(self, chart: QtChart):
+        new_button_value = (
+            "Show Text: On"
+            if chart.topbar["showtext"].value == "Show Text: Off"
+            else "Show Text: Off"
+        )
+        chart.topbar["showtext"].set(new_button_value)
+        if new_button_value == "Show Text: Off":
+            self.plot_marker(show_text=False)
+        else:
+            self.plot_marker(show_text=True)
 
     def on_timeframe_selection(self, chart: QtChart):
         if chart.topbar["timeframe"].value == "all":
